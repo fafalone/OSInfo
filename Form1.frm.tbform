@@ -1,0 +1,35 @@
+[
+   {
+      "StartUpPosition": 3,
+      "ScaleWidth": 5220,
+      "ScaleHeight": 6210,
+      "LinkTopic": "Form1",
+      "ClientWidth": 5220,
+      "ClientTop": 450,
+      "ClientLeft": 120,
+      "ClientHeight": 6210,
+      "Caption": "Form1",
+      "AutoRedraw": -1,
+      "FontName":"MS Sans Serif",
+      "_clsid": "{33AD4F38-6699-11CF-B70C-00AA0060D393}",
+      "FormDesignerId": "{6EE2F46C-6D5A-4E33-9DB1-3EA13DF2598E}",
+      "Width":348,
+      "Height":414,
+      "Name":"Form1",
+      "_children": [      {
+         "Width":329,
+         "Top":8,
+         "Text":"Text1",
+         "TabIndex": 0,
+         "ScrollBars": 2,
+         "MultiLine": -1,
+         "Left":8,
+         "Height":401,
+         "FontName":"MS Sans Serif",
+         "_clsid": "{33AD4EE0-6699-11CF-B70C-00AA0060D393}",
+         "_className": "TextBox",
+         "Name":"txtText1"
+      }
+      ]
+   }
+]
