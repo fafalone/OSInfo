@@ -11,12 +11,12 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = True
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-Attribute VB_Ext_KEY = "SavedWithClassBuilder6" ,"Yes"
-Attribute VB_Ext_KEY = "Top_Level" ,"Yes"
+Attribute VB_Ext_KEY = "SavedWithClassBuilder6", "Yes"
+Attribute VB_Ext_KEY = "Top_Level", "Yes"
 Option Explicit
 
 ' OSInfo class by Alex Dragokas
-' ver 1.15
+' ver 1.18
 '
 ' Updated to support x64 by Jon Johnson (fafalone)
 '
@@ -120,13 +120,13 @@ Private Type SID_IDENTIFIER_AUTHORITY
 End Type
 
 Private Type SID_AND_ATTRIBUTES
-    Sid As LongPtr
+    SID As LongPtr
     Attributes As Long
 End Type
 
 Private Type TOKEN_GROUPS
     GroupCount As Long
-    Groups(50) As SID_AND_ATTRIBUTES
+    Groups(0) As SID_AND_ATTRIBUTES
 End Type
 
 'Private Type TOKEN_PRIVILEGES
@@ -231,6 +231,7 @@ Private Declare PtrSafe Function GetComputerName Lib "kernel32" Alias "GetComput
 Private Declare PtrSafe Function lstrlen Lib "kernel32" Alias "lstrlenW" (ByVal lpString As LongPtr) As Long
 Private Declare PtrSafe Function GlobalMemoryStatusEx Lib "kernel32" (ByRef lpBuffer As MEMORYSTATUSEX) As Long
 Private Declare PtrSafe Function PdhOpenQuery Lib "Pdh.dll" Alias "PdhOpenQueryW" (ByVal szDataSource As LongPtr, ByVal dwUserData As LongPtr, phQuery As LongPtr) As Long
+Private Declare PtrSafe Function PdhCloseQuery Lib "Pdh.dll" (ByVal QueryHandle As LongPtr) As Long
 Private Declare PtrSafe Function PdhAddEnglishCounter Lib "Pdh.dll" Alias "PdhAddEnglishCounterW" (ByVal hQuery As LongPtr, ByVal szFullCounterPath As String, ByVal dwUserData As LongPtr, phCounter As LongPtr) As Long
 Private Declare PtrSafe Function PdhCollectQueryData Lib "Pdh.dll" (ByVal hQuery As LongPtr) As Long
 Private Declare PtrSafe Function PdhGetFormattedCounterValue Lib "Pdh.dll" (ByVal hCounter As LongPtr, ByVal dwFormat As Long, lpdwType As Long, pValue As PDH_FMT_COUNTERVALUE) As Long
@@ -292,6 +293,7 @@ Private Declare Function GetComputerName Lib "kernel32.dll" Alias "GetComputerNa
 Private Declare Function lstrlen Lib "kernel32.dll" Alias "lstrlenW" (ByVal lpString As Long) As Long
 Private Declare Function GlobalMemoryStatusEx Lib "kernel32.dll" (lpBuffer As MEMORYSTATUSEX) As Long
 Private Declare Function PdhOpenQuery Lib "Pdh.dll" Alias "PdhOpenQueryW" (ByVal szDataSource As Long, ByVal dwUserData As Long, phQuery As Long) As Long
+Private Declare Function PdhCloseQuery Lib "Pdh.dll" (ByVal QueryHandle As Long) As Long
 Private Declare Function PdhAddEnglishCounter Lib "Pdh.dll" Alias "PdhAddEnglishCounterW" (ByVal hQuery As Long, ByVal szFullCounterPath As Long, ByVal dwUserData As Long, phCounter As Long) As Long
 Private Declare Function PdhCollectQueryData Lib "Pdh.dll" (ByVal hQuery As Long) As Long
 Private Declare Function PdhGetFormattedCounterValue Lib "Pdh.dll" (ByVal hCounter As Long, ByVal dwFormat As Long, lpdwType As Long, pValue As PDH_FMT_COUNTERVALUE) As Long
@@ -807,7 +809,6 @@ Private Sub Class_Initialize()
     End Select
     
     SID_CurrentProcess_ = GetCurrentProcessSID()
-    Debug.Print "Current sid=" & SID_CurrentProcess_
     
     IsLocalSystemContext_ = (SID_CurrentProcess_ = "S-1-5-18")
     
@@ -958,11 +959,8 @@ ErrorHandler:
     ErrorMsg Err, "clsOSver.RegRead_REG_SZ"
     If hKey <> 0 Then RegCloseKey hKey
 End Function
-#If VBA7 Then
-Public Function IsProcessElevated(Optional hProcess As LongPtr) As Boolean
-#Else
-Public Function IsProcessElevated(Optional hProcess As Long) As Boolean
-#End If
+
+Private Function IsProcessElevated(Optional hProcess As LongPtr) As Boolean
     On Error GoTo ErrorHandler
     
     Dim hToken           As LongPtr
@@ -1013,6 +1011,11 @@ Private Function GetUserType() As String
     Dim lResult         As Long
     Dim tpTokens        As TOKEN_GROUPS
     Dim tpSidAuth       As SID_IDENTIFIER_AUTHORITY
+    Dim groupsCount     As Long
+    Dim bGrpAdmin       As Boolean
+    Dim bGrpPowerUser   As Boolean
+    Dim bGrpLimitedUser As Boolean
+    Dim bGrpGuest       As Boolean
     
     GetUserType = "Unknown"
     tpSidAuth.Value(5) = SECURITY_NT_AUTHORITY
@@ -1024,42 +1027,48 @@ Private Function GetUserType() As String
     
     If hProcessToken Then
         
-        ' Определяем требуемый размер буфера
+        ' Get the buffer size required
         GetTokenInformation hProcessToken, ByVal TokenGroups, 0&, 0&, BufferSize
         
         If BufferSize Then
-             'Dim InfoBuffer() As Long
-             'ReDim InfoBuffer((BufferSize \ 4) - 1) As Long  ' Переводим размер byte -> Long
             Dim InfoBuffer() As Byte
             ReDim InfoBuffer(BufferSize - 1)
-            ' Получаем информацию о SID-ах групп, ассоциированных с этим токеном
+            ' Retrieving info about SID of groups, associated with this token
             If 0 <> GetTokenInformation(hProcessToken, ByVal TokenGroups, InfoBuffer(0), BufferSize, BufferSize) Then
-            
-                ' Заполняем структуру из буфера
-                Debug.Print "sizeof(tpTokens)=" & LenB(tpTokens) & ", sizeof(Buffer)=" & BufferSize
-                Call CopyMemory(tpTokens, InfoBuffer(0), BufferSize)
-            
-                ' Получаем SID-ы каждого типа пользователей
+                
+                groupsCount = InfoBuffer(0)
+                Dim tpGroups() As SID_AND_ATTRIBUTES
+                ReDim tpGroups(groupsCount - 1) As SID_AND_ATTRIBUTES
+                
+                Dim fieldOffset As Long: fieldOffset = Abs(VarPtr(tpTokens.Groups(0)) - VarPtr(tpTokens))
+                'Statically:
+                '"BufferSize" is much > SID_AND_ATTRIBUTES array, because
+                ' the buffer returned also holds Sid strings data pointed by .Sid ptr of each array element
+                'So, we calculating array size manually:
+                'Call CopyMemory(tpTokens, InfoBuffer(0), fieldOffset + groupsCount * lenb(tpTokens.Groups(0)))
+                
+                'Dynamically:
+                Call CopyMemory(tpGroups(0), InfoBuffer(fieldOffset), (UBound(tpGroups) + 1) * LenB(tpGroups(0)))
+                
+                ' Retrieving SIDs of each type of well-known users beforehand
                 lResult = AllocateAndInitializeSid(tpSidAuth, 2&, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0&, 0&, 0&, 0&, 0&, 0&, psidAdmin)
                 lResult = AllocateAndInitializeSid(tpSidAuth, 2&, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_POWER_USERS, 0&, 0&, 0&, 0&, 0&, 0&, psidPower)
                 lResult = AllocateAndInitializeSid(tpSidAuth, 2&, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_USERS, 0&, 0&, 0&, 0&, 0&, 0&, psidUser)
                 lResult = AllocateAndInitializeSid(tpSidAuth, 2&, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_GUESTS, 0&, 0&, 0&, 0&, 0&, 0&, psidGuest)
-                'lResult = AllocateAndInitializeSid(tpSidAuth, 2&, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_RDP, 0&, 0&, 0&, 0&, 0&, 0&, psidRDP)
-            
-                If IsValidSid(psidAdmin) And IsValidSid(psidPower) And IsValidSid(psidUser) And IsValidSid(psidGuest) Then  'And IsValidSid(psidRDP)
-                    For i = 0 To tpTokens.GroupCount
-                        ' Берем SID каждой из ассоциированных групп
-                        If IsValidSid(tpTokens.Groups(i).Sid) Then
-                            ' Проверяем на соответствие
-                            If EqualSid(ByVal tpTokens.Groups(i).Sid, ByVal psidAdmin) Then
-                                Debug.Print "Sid " & i & " is admin"
-                                GetUserType = "Administrators":  Exit For
-                            ElseIf EqualSid(ByVal tpTokens.Groups(i).Sid, ByVal psidPower) Then
-                                GetUserType = "Power Users":     Exit For
-                            ElseIf EqualSid(ByVal tpTokens.Groups(i).Sid, ByVal psidUser) Then
-                                GetUserType = "Limited Users":   Exit For
-                            ElseIf EqualSid(ByVal tpTokens.Groups(i).Sid, ByVal psidGuest) Then
-                                GetUserType = "Guests":          Exit For
+                
+                If IsValidSid(psidAdmin) And IsValidSid(psidPower) And IsValidSid(psidUser) And IsValidSid(psidGuest) Then
+                    For i = 0 To UBound(tpGroups)
+                        ' Take SID of each associated group
+                        If IsValidSid(tpGroups(i).SID) Then
+                            ' Check for compliance
+                            If EqualSid(ByVal tpGroups(i).SID, ByVal psidAdmin) Then
+                                bGrpAdmin = True
+                            ElseIf EqualSid(ByVal tpGroups(i).SID, ByVal psidPower) Then
+                                bGrpPowerUser = True
+                            ElseIf EqualSid(ByVal tpGroups(i).SID, ByVal psidUser) Then
+                                bGrpLimitedUser = True
+                            ElseIf EqualSid(ByVal tpGroups(i).SID, ByVal psidGuest) Then
+                                bGrpGuest = True
                             End If
                         End If
                     Next
@@ -1071,6 +1080,16 @@ Private Function GetUserType() As String
             End If
         End If
         CloseHandle hProcessToken: hProcessToken = 0
+    End If
+    
+    If bGrpAdmin Then
+        GetUserType = "Administrators"
+    ElseIf bGrpPowerUser Then
+        GetUserType = "Power Users"
+    ElseIf bGrpLimitedUser Then
+        GetUserType = "Limited Users"
+    ElseIf bGrpGuest Then
+        GetUserType = "Guests"
     End If
     
     Exit Function
@@ -1088,7 +1107,7 @@ Private Function GetCurrentProcessSID() As String
 
     Const TokenUser As Long = 1&
         
-    Dim hProcess As LongPtr, hProcessToken As LongPtr, tkUser As SID_AND_ATTRIBUTES, dwSize As Long, sSID As String, psSID As LongPtr
+    Dim hProcess As LongPtr, hProcessToken As LongPtr, tkUser As SID_AND_ATTRIBUTES, dwSize As Long, sSid As String, psSID As LongPtr
 
     If hProcess = 0 Then hProcess = GetCurrentProcess()
     If 0 = OpenProcessToken(hProcess, TOKEN_QUERY, hProcessToken) Then Exit Function
@@ -1106,18 +1125,15 @@ Private Function GetCurrentProcessSID() As String
             If 0 <> GetTokenInformation(hProcessToken, ByVal TokenUser, InfoBuffer(0), dwSize, dwSize) Then
             
                 Call CopyMemory(tkUser, InfoBuffer(0), LenB(tkUser))
-            
-                ' Заполняем структуру из буфера
-                'Call CopyMemory(tpTokens, InfoBuffer(0), Len(tpTokens))
                 
-                If IsValidSid(tkUser.Sid) Then
-                    If 0 <> ConvertSidToStringSid(tkUser.Sid, psSID) Then
+                If IsValidSid(tkUser.SID) Then
+                    If 0 <> ConvertSidToStringSid(tkUser.SID, psSID) Then
                         dwSize = lstrlenW(psSID)
-                        sSID = String$(dwSize + 1, 0)   '4 Nul
+                        sSid = String$(dwSize + 1, 0)   '4 Nul
                         If dwSize <> 0 Then
-                            lstrcpyW StrPtr(sSID), psSID
+                            lstrcpyW StrPtr(sSid), psSID
                         End If
-                        GetCurrentProcessSID = Left$(sSID, lstrlenW(StrPtr(sSID)))
+                        GetCurrentProcessSID = Left$(sSid, lstrlenW(StrPtr(sSid)))
                         LocalFree psSID
                     End If
                 End If
@@ -1677,19 +1693,19 @@ End Function
 
 Public Function IsWow64() As Boolean   ' Разрядность ОС
     Dim hModule As LongPtr, procAddr As LongPtr, lIsWin64 As Long
-    Static isinit As Boolean, Result As Boolean
+    Static isInit As Boolean, result As Boolean
     
-    If isinit Then
-        IsWow64 = Result
+    If isInit Then
+        IsWow64 = result
     Else
-        isinit = True
+        isInit = True
         hModule = LoadLibrary(StrPtr("kernel32.dll"))
         If hModule Then
             procAddr = GetProcAddress(hModule, "IsWow64Process")
             If procAddr <> 0 Then
                 IsWow64Process GetCurrentProcess(), lIsWin64
-                Result = CBool(lIsWin64)
-                IsWow64 = Result
+                result = CBool(lIsWin64)
+                IsWow64 = result
             End If
             FreeLibrary hModule
         End If
@@ -2069,3 +2085,6 @@ Private Sub ErrorMsg(Err As ErrObject, ErrMessage As String)
     Debug.Print "Error: " & Err.Number & " (LastDll: " & Err.LastDllError & "): " & ErrMessage
 End Sub
 
+Private Sub Class_Terminate()
+    If m_hCpuQuery <> 0 Then PdhCloseQuery m_hCpuQuery
+End Sub
