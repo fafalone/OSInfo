@@ -757,7 +757,6 @@ Private Sub Class_Initialize()
             RegRead_REG_SZ("SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName")
     End If
     
-    'Ðåäàêöèÿ
     If Len(Edition_) = 0 Then
         If MajorMinor_ >= 6 Then
             If GetProductInfo(osi.dwMajorVersion, osi.dwMinorVersion, osi.wServicePackMajor, osi.wServicePackMinor, ProductType) Then
@@ -972,7 +971,7 @@ Private Function IsProcessElevated(Optional hProcess As LongPtr) As Boolean
     Dim dwLengthNeeded   As Long
     Dim dwIsElevated     As Long
     
-    ' < Win Vista. Óñòàíàâëèâàåì true, åñëè ïîëüçîâàòåëü ñîñòîèò â ãðóïïå "Àäìèíèñòðàòîðû"
+    ' < Win Vista. Set true, if user has membership in "Administrators" group
     If osi.dwMajorVersion < 6 Then IsProcessElevated = (GetUserType() = "Administrators"): Exit Function
 
     If hProcess = 0 Then hProcess = GetCurrentProcess()
@@ -1119,14 +1118,13 @@ Private Function GetCurrentProcessSID() As String
     
     If hProcessToken Then
         
-        ' Îïðåäåëÿåì òðåáóåìûé ðàçìåð áóôåðà
         GetTokenInformation hProcessToken, ByVal TokenUser, 0&, 0&, dwSize
         
         If dwSize Then
             Dim InfoBuffer() As Long
             ReDim InfoBuffer((dwSize \ 4) - 1) As Long
             
-            ' Ïîëó÷àåì èíôîðìàöèþ î SID-àõ ãðóïï, àññîöèèðîâàííûõ ñ ýòèì òîêåíîì
+            ' Retrieving information about SIDs of groups associated with this token
             If 0 <> GetTokenInformation(hProcessToken, ByVal TokenUser, InfoBuffer(0), dwSize, dwSize) Then
             
                 Call CopyMemory(tkUser, InfoBuffer(0), LenB(tkUser))
@@ -2080,6 +2078,10 @@ End Property
 Public Property Get CurrentProcessId() As Long
     CurrentProcessId = m_Pid
 End Property
+
+Private Function NT_SUCCESS(NT_Code As Long) As Boolean
+    NT_SUCCESS = (NT_Code >= 0)
+End Function
 
 Private Function MakeTrue(ByRef bValue As Boolean) As Boolean
     MakeTrue = True
