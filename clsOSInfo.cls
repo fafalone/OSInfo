@@ -16,7 +16,7 @@ Attribute VB_Ext_KEY = "Top_Level", "Yes"
 Option Explicit
 
 ' OSInfo class by Alex Dragokas
-' ver 1.18
+' ver 1.20
 '
 ' Updated to support x64 by Jon Johnson (fafalone)
 '
@@ -25,8 +25,9 @@ Option Explicit
 
 ' Versions:
 
-' 10.0* | Windows Server 2022 (ReleaseId 2009+)
-' 10.0* | Windows 11 (builds 22000+)
+' 10.0* | Windows Server 2025 (ReleaseId 2009, 24H2 Build 26100+)
+' 10.0* | Windows Server 2022 (ReleaseId 2009, 21H2 Build 20348+)
+' 10.0* | Windows 11 (21H2 Build 22000+)
 ' 10.0* | Windows Server 2016
 ' 10.0* | Windows 10 (builds 9885+, Insider Preview)
 ' 6.4*  | Windows 10 Technical Preview (builds 9879-)
@@ -619,7 +620,11 @@ Private Sub Class_Initialize()
             Else
                 If ReleaseId_ >= 2009 Then
                     If bIsWin11Core Then
-                        OSName_ = "Windows Server 2022"
+                        If osi.dwBuildNumber >= 26100 Then
+                            OSName_ = "Windows Server 2025"
+                        Else
+                            OSName_ = "Windows Server 2022"
+                        End If
                         IsWindows11OrGreater_ = True
                     Else
                         OSName_ = "Windows Unknown"
@@ -752,7 +757,7 @@ Private Sub Class_Initialize()
             RegRead_REG_SZ("SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName")
     End If
     
-    'Редакция
+    'ГђГҐГ¤Г ГЄГ¶ГЁГї
     If Len(Edition_) = 0 Then
         If MajorMinor_ >= 6 Then
             If GetProductInfo(osi.dwMajorVersion, osi.dwMinorVersion, osi.wServicePackMajor, osi.wServicePackMinor, ProductType) Then
@@ -967,7 +972,7 @@ Private Function IsProcessElevated(Optional hProcess As LongPtr) As Boolean
     Dim dwLengthNeeded   As Long
     Dim dwIsElevated     As Long
     
-    ' < Win Vista. Устанавливаем true, если пользователь состоит в группе "Администраторы"
+    ' < Win Vista. Г“Г±ГІГ Г­Г ГўГ«ГЁГўГ ГҐГ¬ true, ГҐГ±Г«ГЁ ГЇГ®Г«ГјГ§Г®ГўГ ГІГҐГ«Гј Г±Г®Г±ГІГ®ГЁГІ Гў ГЈГ°ГіГЇГЇГҐ "ГЂГ¤Г¬ГЁГ­ГЁГ±ГІГ°Г ГІГ®Г°Г»"
     If osi.dwMajorVersion < 6 Then IsProcessElevated = (GetUserType() = "Administrators"): Exit Function
 
     If hProcess = 0 Then hProcess = GetCurrentProcess()
@@ -1062,7 +1067,7 @@ Private Function GetUserType() As String
                         If IsValidSid(tpGroups(i).SID) Then
                             ' Check for compliance
                             If EqualSid(ByVal tpGroups(i).SID, ByVal psidAdmin) Then
-                                bGrpAdmin = True
+                                bGrpAdmin = True: Exit For
                             ElseIf EqualSid(ByVal tpGroups(i).SID, ByVal psidPower) Then
                                 bGrpPowerUser = True
                             ElseIf EqualSid(ByVal tpGroups(i).SID, ByVal psidUser) Then
@@ -1114,14 +1119,14 @@ Private Function GetCurrentProcessSID() As String
     
     If hProcessToken Then
         
-        ' Определяем требуемый размер буфера
+        ' ГЋГЇГ°ГҐГ¤ГҐГ«ГїГҐГ¬ ГІГ°ГҐГЎГіГҐГ¬Г»Г© Г°Г Г§Г¬ГҐГ° ГЎГіГґГҐГ°Г 
         GetTokenInformation hProcessToken, ByVal TokenUser, 0&, 0&, dwSize
         
         If dwSize Then
             Dim InfoBuffer() As Long
             ReDim InfoBuffer((dwSize \ 4) - 1) As Long
             
-            ' Получаем информацию о SID-ах групп, ассоциированных с этим токеном
+            ' ГЏГ®Г«ГіГ·Г ГҐГ¬ ГЁГ­ГґГ®Г°Г¬Г Г¶ГЁГѕ Г® SID-Г Гµ ГЈГ°ГіГЇГЇ, Г Г±Г±Г®Г¶ГЁГЁГ°Г®ГўГ Г­Г­Г»Гµ Г± ГЅГІГЁГ¬ ГІГ®ГЄГҐГ­Г®Г¬
             If 0 <> GetTokenInformation(hProcessToken, ByVal TokenUser, InfoBuffer(0), dwSize, dwSize) Then
             
                 Call CopyMemory(tkUser, InfoBuffer(0), LenB(tkUser))
@@ -1691,7 +1696,7 @@ Private Function GetLangNameByCultureCode(CultureCode As Long) As String
     GetLangNameByCultureCode = Lang
 End Function
 
-Public Function IsWow64() As Boolean   ' Разрядность ОС
+Public Function IsWow64() As Boolean   ' ГђГ Г§Г°ГїГ¤Г­Г®Г±ГІГј ГЋГ‘
     Dim hModule As LongPtr, procAddr As LongPtr, lIsWin64 As Long
     Static isInit As Boolean, result As Boolean
     
@@ -1712,14 +1717,14 @@ Public Function IsWow64() As Boolean   ' Разрядность ОС
     End If
 End Function
 
-Private Function GetSecureBootState(out_Supported As Boolean, out_State As Boolean) As Boolean 'thanks to ISergey & Убежденный
+Private Function GetSecureBootState(out_Supported As Boolean, out_State As Boolean) As Boolean 'thanks to ISergey & Г“ГЎГҐГ¦Г¤ГҐГ­Г­Г»Г©
     If Not IsWindows7OrGreater_ Then Exit Function
     Dim lState As Long
     Dim iStatus As Long
     Dim secboot As SECURE_BOOT_STATUS
     Dim dwRetSize As Long
     iStatus = NtQuerySystemInformation(SystemSecureBootInformation, ByVal VarPtr(secboot), LenB(secboot), dwRetSize)
-    If iStatus = STATUS_SUCCESS Then
+    If NT_SUCCESS(iStatus) Then
         out_Supported = secboot.fCapable
         out_State = secboot.fEnabled
     ElseIf iStatus = STATUS_INVALID_INFO_CLASS Then
@@ -1735,7 +1740,7 @@ Private Function GetCodeIntegrityFlags() As Long
     Dim dwRetSize As Long
     CodeIntegrity.Length = LenB(CodeIntegrity)
     iStatus = NtQuerySystemInformation(SystemCodeIntegrityInformation, ByVal VarPtr(CodeIntegrity), LenB(CodeIntegrity), dwRetSize)
-    If iStatus = STATUS_SUCCESS Then
+    If NT_SUCCESS(iStatus) Then
         GetCodeIntegrityFlags = CodeIntegrity.CodeIntegrityOptions
     End If
 End Function
