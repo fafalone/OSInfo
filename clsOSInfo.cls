@@ -1694,7 +1694,7 @@ Private Function GetLangNameByCultureCode(CultureCode As Long) As String
     GetLangNameByCultureCode = Lang
 End Function
 
-Public Function IsWow64() As Boolean   ' Ðàçðÿäíîñòü ÎÑ
+Public Function IsWow64() As Boolean
     Dim hModule As LongPtr, procAddr As LongPtr, lIsWin64 As Long
     Static isInit As Boolean, result As Boolean
     
@@ -1715,7 +1715,7 @@ Public Function IsWow64() As Boolean   ' Ðàçðÿäíîñòü ÎÑ
     End If
 End Function
 
-Private Function GetSecureBootState(out_Supported As Boolean, out_State As Boolean) As Boolean 'thanks to ISergey & Óáåæäåííûé
+Private Function GetSecureBootState(out_Supported As Boolean, out_State As Boolean) As Boolean 'thanks to ISergey & Казакевич О.
     If Not IsWindows7OrGreater_ Then Exit Function
     Dim lState As Long
     Dim iStatus As Long
@@ -2042,14 +2042,14 @@ Public Property Get MemoryTotal() As Long ' in MB
     Dim mem As MEMORYSTATUSEX
     mem.dwLength = LenB(mem)
     GlobalMemoryStatusEx mem
-    MemoryTotal = CLng(mem.ullTotalPhys / 1024 * 10)
+    MemoryTotal = CLng(mem.ullTotalPhys / 104.8576)
 End Property
 
 Public Property Get MemoryFree() As Long ' in MB
     Dim mem As MEMORYSTATUSEX
     mem.dwLength = LenB(mem)
     GlobalMemoryStatusEx mem
-    MemoryFree = CLng(mem.ullAvailPhys / 1024 * 10)
+    MemoryFree = CLng(mem.ullAvailPhys / 104.8576)
 End Property
 
 Public Property Get MemoryLoad() As Long ' in %
